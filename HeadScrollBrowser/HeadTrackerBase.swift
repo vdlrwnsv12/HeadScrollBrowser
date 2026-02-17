@@ -23,14 +23,18 @@ class HeadTrackerBase: NSObject, ObservableObject {
     @Published var isSupported: Bool = true
 
     // ====== 눈 감기 상태 ======
-    @Published var eyesClosedProgress: CGFloat = 0   // 탭 모드 진입 / 탭 실행 프로그레스
-    @Published var eyeStatusText: String = ""        // 프로그레스 바 레이블
-    @Published var calibrationProgress: CGFloat = 0  // 정면 설정 프로그레스 (별도 표시)
+    @Published var eyesClosedProgress: CGFloat = 0
+    @Published var eyeStatusText: String = ""
+    @Published var calibrationProgress: CGFloat = 0
 
     // ====== 조준 모드 ======
     @Published var isAiming: Bool = false
-    @Published var isDotFrozen: Bool = false          // 조준 중 눈 감으면 점 고정
+    @Published var isDotFrozen: Bool = false
     @Published var eyeTapFired: Bool = false
+
+    // ====== 설정 모드 (입 벌리기) ======
+    @Published var isSettingsMode: Bool = false
+    @Published var selectedSetting: Int = 0          // 0 = 데드존, 1 = 최대속도
 
     @Published var deadZoneDeg: CGFloat {
         didSet { UserDefaults.standard.set(deadZoneDeg, forKey: "deadZoneDeg") }
@@ -53,11 +57,28 @@ class HeadTrackerBase: NSObject, ObservableObject {
     let eyeCloseThreshold: CGFloat = 0.65
     var eyesClosedSince: CFTimeInterval?
 
+    // ====== 고개 좌우 꺾기 → 뒤로/앞으로 ======
+    @Published var navProgress: CGFloat = 0       // 0~1 프로그레스
+    @Published var navDirection: Int = 0           // -1 = 뒤로, 0 = 없음, 1 = 앞으로
+    @Published var headNavBackFired: Bool = false
+    @Published var headNavForwardFired: Bool = false
+    let navYawThreshold: CGFloat = 10              // 10도 이상 꺾어야 시작
+    let navHoldDuration: CFTimeInterval = 2.0
+    var yawHoldSince: CFTimeInterval?
+    var yawHoldDirection: Int = 0
+
+    // ====== Mouth open state ======
+    let mouthOpenThreshold: CGFloat = 0.35
+    var mouthOpenSince: CFTimeInterval?
+    let mouthToggleDelay: CFTimeInterval = 0.5       // 0.5초 이상 벌려야 토글
+    var settingsNeutralPitch: CGFloat = 0             // 설정 모드 진입 시 pitch 기준점
+    var settingsNeutralYaw: CGFloat = 0               // 설정 모드 진입 시 yaw 기준점
+
     // 타이밍 상수
-    let aimEntryDuration: CFTimeInterval = 1.0     // 스크롤 중 1초 눈감기 → 탭 모드
-    let tapConfirmDuration: CFTimeInterval = 1.0   // 조준 중 1초 눈감기 → 탭
-    let calibrateDuration: CFTimeInterval = 3.0    // 3초 눈감기 → 정면 설정
-    let graceDelay: CFTimeInterval = 0.5           // 프로그레스 시작 전 유예
+    let aimEntryDuration: CFTimeInterval = 1.0
+    let tapConfirmDuration: CFTimeInterval = 1.0
+    let calibrateDuration: CFTimeInterval = 3.0
+    let graceDelay: CFTimeInterval = 0.5
 
     static let defaultDeadZone: CGFloat = 3.5
     static let defaultMaxSpeed: CGFloat = 1200
@@ -106,24 +127,49 @@ class HeadTrackerBase: NSObject, ObservableObject {
         return sign * invert * curve * maxSpeedPtPerSec
     }
 
+    // ====== 입 벌리기 → 설정 모드 토글 ======
+    func processMouthOpen(_ mouthValue: CGFloat) {
+        let isOpen = mouthValue > mouthOpenThreshold
+
+        if isOpen {
+            if mouthOpenSince == nil { mouthOpenSince = CACurrentMediaTime() }
+        } else {
+            if let since = mouthOpenSince {
+                let duration = CACurrentMediaTime() - since
+                if duration >= mouthToggleDelay {
+                    DispatchQueue.main.async {
+                        if self.isSettingsMode {
+                            // 설정 모드 종료
+                            self.isSettingsMode = false
+                        } else {
+                            // 설정 모드 진입: 현재 고개 위치를 기준점으로
+                            self.settingsNeutralPitch = self.smoothedPitch - self.neutralPitch
+                            self.settingsNeutralYaw = self.smoothedYaw - self.neutralYaw
+                            self.isSettingsMode = true
+                            self.isAiming = false  // 탭 모드 해제
+                        }
+                    }
+                }
+            }
+            mouthOpenSince = nil
+        }
+    }
+
     // ====== 통합 눈 감기 처리 ======
-    // 스크롤 중: 2초 눈감고 뜨면 → 탭 모드 진입
-    // 탭 모드:  1초 눈감고 뜨면 → 탭 실행, 스크롤 복귀
-    // 언제든:   3초 이상 눈감기 → 정면 설정
     func processAiming(leftClosed: Bool, rightClosed: Bool) {
+        // 설정 모드 중에는 눈 감기 무시
+        if isSettingsMode { return }
+
         let bothClosed = leftClosed && rightClosed
         let now = CACurrentMediaTime()
 
         if bothClosed {
-            // ── 눈 감는 중 ──
             if eyesClosedSince == nil { eyesClosedSince = now }
             let elapsed = now - (eyesClosedSince ?? now)
 
-            // 정면 설정 프로그레스 (항상 표시)
             let calProgress = elapsed < 1.0 ? 0 : min((elapsed - 1.0) / (calibrateDuration - 1.0), 1.0)
             DispatchQueue.main.async { self.calibrationProgress = calProgress }
 
-            // 3초 이상 → 정면 설정 (어떤 모드에서든)
             if elapsed >= calibrateDuration {
                 calibrateNeutral()
                 eyesClosedSince = nil
@@ -138,7 +184,6 @@ class HeadTrackerBase: NSObject, ObservableObject {
             }
 
             if isAiming {
-                // 조준 중 눈 감기 → 유예 후 점 고정 + 탭 프로그레스
                 DispatchQueue.main.async { self.isDotFrozen = elapsed >= self.graceDelay }
                 let tapProgress = elapsed < graceDelay ? 0
                     : min((elapsed - graceDelay) / (tapConfirmDuration - graceDelay), 1.0)
@@ -147,7 +192,6 @@ class HeadTrackerBase: NSObject, ObservableObject {
                     self.eyeStatusText = "탭 실행 중…"
                 }
             } else {
-                // 스크롤 중 눈 감기 → 탭 모드 진입 프로그레스
                 let aimProgress = elapsed < graceDelay ? 0
                     : min((elapsed - graceDelay) / (aimEntryDuration - graceDelay), 1.0)
                 DispatchQueue.main.async {
@@ -156,22 +200,18 @@ class HeadTrackerBase: NSObject, ObservableObject {
                 }
             }
         } else {
-            // ── 눈 뜸 ──
             if let since = eyesClosedSince {
                 let elapsed = now - since
 
                 if isAiming {
-                    // 조준 중이었고: 1초 이상 감았다 뜨면 → 탭!
                     if elapsed >= tapConfirmDuration && elapsed < calibrateDuration {
                         DispatchQueue.main.async {
                             self.eyeTapFired = true
                             self.isAiming = false
                         }
                     }
-                    // 1초 미만 → 점 고정 해제, 계속 조준
                     DispatchQueue.main.async { self.isDotFrozen = false }
                 } else {
-                    // 스크롤 중이었고: 2초 이상 감았다 뜨면 → 탭 모드 진입
                     if elapsed >= aimEntryDuration && elapsed < calibrateDuration {
                         DispatchQueue.main.async { self.isAiming = true }
                     }
@@ -196,12 +236,36 @@ class HeadTrackerBase: NSObject, ObservableObject {
 
         let v = mapPitchToVelocity(pitch: adjustedPitch)
 
-        // 조준 모드: X,Y 반전 매핑 (점 고정 중엔 업데이트 안 함)
         let yawRange: CGFloat = 15
         let pitchRange: CGFloat = 15
 
-        if isAiming && !isDotFrozen {
-            // 반전: 고개 위 → 점 아래 (좌우는 그대로)
+        if isSettingsMode {
+            // 설정 모드: 고개 상하로 값 조절, 좌우로 항목 선택
+            let pitchDelta = adjustedPitch - settingsNeutralPitch
+            let yawDelta = adjustedYaw - settingsNeutralYaw
+
+            DispatchQueue.main.async {
+                // 좌우: 왼쪽 = 데드존(0), 오른쪽 = 최대속도(1)
+                if yawDelta < -3 {
+                    self.selectedSetting = 0
+                } else if yawDelta > 3 {
+                    self.selectedSetting = 1
+                }
+
+                // 상하: 위로 = 값 증가, 아래로 = 값 감소
+                if self.selectedSetting == 0 {
+                    let change = pitchDelta / pitchRange * 4.5 // ±15도 → ±4.5
+                    self.deadZoneDeg = min(max(Self.defaultDeadZone + change, 1), 10)
+                } else {
+                    let change = pitchDelta / pitchRange * 1400 // ±15도 → ±1400
+                    self.maxSpeedPtPerSec = min(max(Self.defaultMaxSpeed + change, 200), 3000)
+                }
+
+                self.pitchDeg = adjustedPitch
+                self.yawDeg = adjustedYaw
+                self.velocity = 0
+            }
+        } else if isAiming && !isDotFrozen {
             let rawDotX = 0.5 + (adjustedYaw / yawRange) * 0.5
             let clampedDotX = min(max(rawDotX, 0.05), 0.95)
             smoothedDotX = smoothedDotX + 0.08 * (clampedDotX - smoothedDotX)
@@ -209,24 +273,74 @@ class HeadTrackerBase: NSObject, ObservableObject {
             let rawDotY = 0.5 + (adjustedPitch / pitchRange) * 0.5
             let clampedDotY = min(max(rawDotY, 0.05), 0.95)
             smoothedDotY = smoothedDotY + 0.08 * (clampedDotY - smoothedDotY)
+
+            DispatchQueue.main.async {
+                self.pitchDeg = adjustedPitch
+                self.yawDeg = adjustedYaw
+                self.dotX = self.smoothedDotX
+                self.dotY = self.smoothedDotY
+                self.velocity = 0
+            }
         } else if !isAiming {
-            // 스크롤 모드: 기존 방향으로 dotX만 업데이트
             let rawDotX = 0.5 + (adjustedYaw / yawRange) * 0.5
             let clampedDotX = min(max(rawDotX, 0.05), 0.95)
             smoothedDotX = smoothedDotX + 0.08 * (clampedDotX - smoothedDotX)
-        }
-        // isDotFrozen일 때는 smoothedDotX/Y 업데이트 안 함 → 점 고정
 
-        DispatchQueue.main.async {
-            self.pitchDeg = adjustedPitch
-            self.yawDeg = adjustedYaw
-            self.dotX = self.smoothedDotX
-            self.dotY = self.smoothedDotY
-
-            if self.isAiming {
-                self.velocity = 0
-            } else {
+            DispatchQueue.main.async {
+                self.pitchDeg = adjustedPitch
+                self.yawDeg = adjustedYaw
+                self.dotX = self.smoothedDotX
+                self.dotY = self.smoothedDotY
                 self.velocity = (self.hasFace && self.isScrollEnabled && self.eyesClosedProgress == 0) ? v : 0
+            }
+        } else {
+            // isDotFrozen: 점 고정, velocity 0
+            DispatchQueue.main.async {
+                self.pitchDeg = adjustedPitch
+                self.yawDeg = adjustedYaw
+                self.velocity = 0
+            }
+        }
+
+        // ====== 고개 좌우 꺾기 → 뒤로/앞으로 감지 ======
+        // 설정 모드·조준 모드에서는 비활성
+        guard !isSettingsMode && !isAiming else {
+            yawHoldSince = nil
+            yawHoldDirection = 0
+            DispatchQueue.main.async { self.navProgress = 0; self.navDirection = 0 }
+            return
+        }
+
+        let now = CACurrentMediaTime()
+
+        if adjustedYaw < -navYawThreshold {
+            // 왼쪽 꺾기 → 뒤로
+            if yawHoldDirection != -1 { yawHoldSince = now; yawHoldDirection = -1 }
+            let elapsed = now - (yawHoldSince ?? now)
+            DispatchQueue.main.async {
+                self.navDirection = -1
+                self.navProgress = min(CGFloat(elapsed / self.navHoldDuration), 1.0)
+            }
+            if elapsed >= navHoldDuration {
+                DispatchQueue.main.async { self.headNavBackFired = true }
+                yawHoldSince = nil; yawHoldDirection = 0
+            }
+        } else if adjustedYaw > navYawThreshold {
+            // 오른쪽 꺾기 → 앞으로
+            if yawHoldDirection != 1 { yawHoldSince = now; yawHoldDirection = 1 }
+            let elapsed = now - (yawHoldSince ?? now)
+            DispatchQueue.main.async {
+                self.navDirection = 1
+                self.navProgress = min(CGFloat(elapsed / self.navHoldDuration), 1.0)
+            }
+            if elapsed >= navHoldDuration {
+                DispatchQueue.main.async { self.headNavForwardFired = true }
+                yawHoldSince = nil; yawHoldDirection = 0
+            }
+        } else {
+            if yawHoldDirection != 0 {
+                yawHoldDirection = 0; yawHoldSince = nil
+                DispatchQueue.main.async { self.navProgress = 0; self.navDirection = 0 }
             }
         }
     }

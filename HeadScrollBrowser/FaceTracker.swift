@@ -42,6 +42,10 @@ final class FaceTracker: HeadTrackerBase, ARSessionDelegate {
         processAiming(leftClosed: leftBlink > eyeCloseThreshold,
                       rightClosed: rightBlink > eyeCloseThreshold)
 
+        // ----- 입 벌리기 감지 -----
+        let jawOpen = blendShapes[.jawOpen].map { CGFloat(truncating: $0) } ?? 0
+        processMouthOpen(jawOpen)
+
         // ----- head pitch -----
         let t = face.transform
         let zAxis = SIMD3<Float>(t.columns.2.x, t.columns.2.y, t.columns.2.z)

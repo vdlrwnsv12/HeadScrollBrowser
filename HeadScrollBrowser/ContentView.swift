@@ -146,6 +146,18 @@ struct ContentView: View {
                         tracker.eyeTapFired = false
                     }
                 }
+                .onChange(of: tracker.headNavBackFired) { _, fired in
+                    if fired {
+                        command = .goBack
+                        tracker.headNavBackFired = false
+                    }
+                }
+                .onChange(of: tracker.headNavForwardFired) { _, fired in
+                    if fired {
+                        command = .goForward
+                        tracker.headNavForwardFired = false
+                    }
+                }
 
                 // 하단바
                 HStack {
@@ -171,6 +183,98 @@ struct ContentView: View {
             }
             .ignoresSafeArea(edges: .top)
             .statusBarHidden(true)
+            .overlay {
+                if tracker.navProgress > 0 {
+                    HStack {
+                        if tracker.navDirection == -1 {
+                            // 왼쪽: 뒤로
+                            HStack(spacing: 8) {
+                                Image(systemName: "chevron.left")
+                                    .font(.title2.bold())
+                                Text("뒤로")
+                                    .font(.headline)
+                                ProgressView(value: tracker.navProgress)
+                                    .progressViewStyle(.linear)
+                                    .tint(.white)
+                                    .frame(width: 80)
+                            }
+                            .foregroundStyle(.white)
+                            .padding(12)
+                            .background(.blue.opacity(0.8), in: RoundedRectangle(cornerRadius: 12))
+                            Spacer()
+                        } else {
+                            // 오른쪽: 앞으로
+                            Spacer()
+                            HStack(spacing: 8) {
+                                ProgressView(value: tracker.navProgress)
+                                    .progressViewStyle(.linear)
+                                    .tint(.white)
+                                    .frame(width: 80)
+                                Text("앞으로")
+                                    .font(.headline)
+                                Image(systemName: "chevron.right")
+                                    .font(.title2.bold())
+                            }
+                            .foregroundStyle(.white)
+                            .padding(12)
+                            .background(.blue.opacity(0.8), in: RoundedRectangle(cornerRadius: 12))
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.15), value: tracker.navProgress)
+                }
+            }
+            .overlay {
+                if tracker.isSettingsMode {
+                    VStack(spacing: 16) {
+                        Text("설정 모드")
+                            .font(.headline)
+                            .foregroundStyle(.white)
+                        Text("고개 좌우: 항목 선택 · 상하: 값 조절\n입 다물면 종료")
+                            .font(.caption2)
+                            .foregroundStyle(.white.opacity(0.7))
+                            .multilineTextAlignment(.center)
+
+                        HStack(spacing: 20) {
+                            // 데드존
+                            VStack(spacing: 6) {
+                                Text("데드존")
+                                    .font(.caption)
+                                    .foregroundStyle(.white)
+                                Text("\(tracker.deadZoneDeg, specifier: "%.1f")°")
+                                    .font(.title2.bold())
+                                    .foregroundStyle(.white)
+                            }
+                            .padding(16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(tracker.selectedSetting == 0 ? .cyan.opacity(0.5) : .white.opacity(0.15))
+                            )
+
+                            // 최대속도
+                            VStack(spacing: 6) {
+                                Text("최대속도")
+                                    .font(.caption)
+                                    .foregroundStyle(.white)
+                                Text("\(Int(tracker.maxSpeedPtPerSec))")
+                                    .font(.title2.bold())
+                                    .foregroundStyle(.white)
+                            }
+                            .padding(16)
+                            .background(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .fill(tracker.selectedSetting == 1 ? .orange.opacity(0.5) : .white.opacity(0.15))
+                            )
+                        }
+                    }
+                    .padding(24)
+                    .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 20))
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.2), value: tracker.isSettingsMode)
+                    .animation(.easeOut(duration: 0.1), value: tracker.selectedSetting)
+                }
+            }
             .overlay {
                 if !tracker.isSupported {
                     VStack(spacing: 12) {
