@@ -74,7 +74,6 @@ struct SimpleWebView: UIViewRepresentable {
 
         private var displayLink: CADisplayLink?
         private var lastTs: CFTimeInterval = 0
-        private var lastGazeTapPulse: Int = 0
 
         init(_ parent: SimpleWebView) {
             self.parent = parent
@@ -95,17 +94,7 @@ struct SimpleWebView: UIViewRepresentable {
         @objc private func tick(_ link: CADisplayLink) {
             guard let webView = webView else { return }
 
-            // (1) 시선 탭 (ON일 때만)
-            if parent.tracker.isGazeTapEnabled,
-               parent.tracker.gazeTapPulse != lastGazeTapPulse {
-                lastGazeTapPulse = parent.tracker.gazeTapPulse
-                tapAtNormalizedPoint(parent.tracker.gazeTapNorm)
-            } else if !parent.tracker.isGazeTapEnabled {
-                // OFF면 pulse 따라가서 재활성화 시 즉시 발동 방지
-                lastGazeTapPulse = parent.tracker.gazeTapPulse
-            }
-
-            // (2) 고개 스크롤
+            // 고개 스크롤
             guard parent.tracker.hasFace, parent.tracker.isScrollEnabled else { return }
 
             if lastTs == 0 { lastTs = link.timestamp; return }
@@ -122,29 +111,6 @@ struct SimpleWebView: UIViewRepresentable {
             let maxY = max(0, sv.contentSize.height - sv.bounds.height)
             let clampedY = min(max(0, target), maxY)
             sv.setContentOffset(CGPoint(x: 0, y: clampedY), animated: false)
-        }
-
-        private func tapAtNormalizedPoint(_ p: CGPoint) {
-            guard let webView = webView else { return }
-            let nx = max(0, min(1, p.x))
-            let ny = max(0, min(1, p.y))
-
-            let js = """
-            (function(nx, ny){
-              const x = nx * window.innerWidth;
-              const y = ny * window.innerHeight;
-              const el = document.elementFromPoint(x, y);
-              if(!el) return false;
-              function fire(type){
-                const ev = new MouseEvent(type, {bubbles:true, cancelable:true, view:window, clientX:x, clientY:y});
-                el.dispatchEvent(ev);
-              }
-              fire('mousemove'); fire('mousedown'); fire('mouseup');
-              el.click();
-              return true;
-            })(\(nx), \(ny));
-            """
-            webView.evaluateJavaScript(js, completionHandler: { _, _ in })
         }
 
         // WKNavigationDelegate

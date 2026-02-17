@@ -61,30 +61,46 @@ struct ContentView: View {
 
                 // ✅ (토글됨) 정면설정/고개스크롤/민감도 줄
                 if !controlsCollapsed {
-                    HStack(spacing: 8) {
-                        Button("정면 설정") {
-                            tracker.calibrateNeutral()
+                    VStack(spacing: 4) {
+                        HStack(spacing: 8) {
+                            Button("정면 설정") {
+                                tracker.calibrateNeutral()
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button(tracker.isScrollEnabled ? "고개스크롤 ON" : "고개스크롤 OFF") {
+                                tracker.setScrollEnabled(!tracker.isScrollEnabled)
+                            }
+                            .buttonStyle(.bordered)
+
+                            Spacer()
                         }
-                        .buttonStyle(.bordered)
 
-                        Button(tracker.isScrollEnabled ? "고개스크롤 ON" : "고개스크롤 OFF") {
-                            tracker.setScrollEnabled(!tracker.isScrollEnabled)
+                        HStack(spacing: 8) {
+                            Text("데드존")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+
+                            Slider(value: $tracker.deadZoneDeg, in: 1...10, step: 0.5)
+
+                            Text("\(tracker.deadZoneDeg, specifier: "%.1f")")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 30, alignment: .trailing)
                         }
-                        .buttonStyle(.bordered)
 
-                        Spacer()
+                        HStack(spacing: 8) {
+                            Text("최대속도")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
 
-                        Text("민감도")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
+                            Slider(value: $tracker.maxSpeedPtPerSec, in: 200...3000, step: 100)
 
-                        Slider(value: $tracker.deadZoneDeg, in: 1...10, step: 0.5)
-                            .frame(width: 140)
-
-                        Text("\(tracker.deadZoneDeg, specifier: "%.1f")")
-                            .font(.caption)
-                            .foregroundStyle(.secondary)
-                            .frame(width: 34, alignment: .trailing)
+                            Text("\(Int(tracker.maxSpeedPtPerSec))")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                                .frame(width: 40, alignment: .trailing)
+                        }
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
@@ -124,11 +140,6 @@ struct ContentView: View {
                     .buttonStyle(.bordered)
 
                     Spacer()
-
-                    Button(tracker.isGazeTapEnabled ? "시선탭: ON" : "시선탭: OFF") {
-                        tracker.isGazeTapEnabled.toggle()
-                    }
-                    .buttonStyle(.bordered)
                 }
                 .padding(.horizontal, 10)
                 .padding(.vertical, 5)
@@ -145,7 +156,7 @@ struct ContentView: View {
                             .foregroundStyle(.yellow)
                         Text("이 기기는 얼굴 추적을 지원하지 않습니다")
                             .font(.headline)
-                        Text("고개 스크롤과 시선 탭 기능을 사용하려면\nTrueDepth 카메라가 탑재된 기기가 필요합니다.")
+                        Text("고개 스크롤 기능을 사용하려면\nTrueDepth 카메라가 탑재된 기기가 필요합니다.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                             .multilineTextAlignment(.center)
