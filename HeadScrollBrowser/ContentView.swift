@@ -6,6 +6,8 @@ struct ContentView: View {
     @State private var addressBar: String = "https://www.google.com"
     @State private var currentURL: String = "https://www.google.com"
     @State private var canGoBack: Bool = false
+    @State private var canGoForward: Bool = false
+    @State private var isLoading: Bool = false
     @State private var command: WebCommand? = nil
 
     // ✅ 컨트롤(정면설정/고개스크롤/민감도) 줄 숨김 상태
@@ -37,6 +39,12 @@ struct ContentView: View {
                     }
                     .buttonStyle(.plain)
 
+                    Button { command = .reload } label: {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.title3)
+                    }
+                    .buttonStyle(.plain)
+
                     Button("이동") { command = .load(addressBar) }
                         .buttonStyle(.bordered)
                 }
@@ -45,6 +53,11 @@ struct ContentView: View {
                 .background(.ultraThinMaterial)
                 .opacity(0.5)
 
+                // 로딩 인디케이터
+                if isLoading {
+                    ProgressView()
+                        .progressViewStyle(.linear)
+                }
 
                 // ✅ (토글됨) 정면설정/고개스크롤/민감도 줄
                 if !controlsCollapsed {
@@ -85,6 +98,8 @@ struct ContentView: View {
                     command: $command,
                     currentURL: $currentURL,
                     canGoBack: $canGoBack,
+                    canGoForward: $canGoForward,
+                    isLoading: $isLoading,
                     tracker: tracker
                 )
                 .onChange(of: currentURL) { _, newValue in
@@ -96,6 +111,10 @@ struct ContentView: View {
                 HStack {
                     Button("뒤로") { command = .goBack }
                         .disabled(!canGoBack)
+                        .buttonStyle(.bordered)
+
+                    Button("앞으로") { command = .goForward }
+                        .disabled(!canGoForward)
                         .buttonStyle(.bordered)
 
                     // ✅ 요청: 뒤로 옆에 UI 최소화 버튼
@@ -118,6 +137,24 @@ struct ContentView: View {
             }
             .ignoresSafeArea(edges: .top)
             .statusBarHidden(true)
+            .overlay {
+                if !tracker.isSupported {
+                    VStack(spacing: 12) {
+                        Image(systemName: "exclamationmark.triangle.fill")
+                            .font(.largeTitle)
+                            .foregroundStyle(.yellow)
+                        Text("이 기기는 얼굴 추적을 지원하지 않습니다")
+                            .font(.headline)
+                        Text("고개 스크롤과 시선 탭 기능을 사용하려면\nTrueDepth 카메라가 탑재된 기기가 필요합니다.")
+                            .font(.subheadline)
+                            .foregroundStyle(.secondary)
+                            .multilineTextAlignment(.center)
+                    }
+                    .padding(24)
+                    .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+                    .padding(32)
+                }
+            }
             .onAppear { tracker.start() }
             .onDisappear { tracker.stop() }
         }

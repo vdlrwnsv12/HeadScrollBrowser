@@ -4,6 +4,8 @@ import WebKit
 enum WebCommand {
     case load(String)
     case goBack
+    case goForward
+    case reload
 }
 
 struct SimpleWebView: UIViewRepresentable {
@@ -12,6 +14,8 @@ struct SimpleWebView: UIViewRepresentable {
 
     @Binding var currentURL: String
     @Binding var canGoBack: Bool
+    @Binding var canGoForward: Bool
+    @Binding var isLoading: Bool
 
     @ObservedObject var tracker: FaceTracker
 
@@ -40,6 +44,10 @@ struct SimpleWebView: UIViewRepresentable {
             }
         case .goBack:
             if webView.canGoBack { webView.goBack() }
+        case .goForward:
+            if webView.canGoForward { webView.goForward() }
+        case .reload:
+            webView.reload()
         }
 
         // ✅ 여기서 바로 command=nil 하지 말고, 다음 runloop로 미루기
@@ -52,6 +60,11 @@ struct SimpleWebView: UIViewRepresentable {
     private func normalize(_ s: String) -> String {
         let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
         if t.hasPrefix("http://") || t.hasPrefix("https://") { return t }
+        // 공백 포함 또는 `.` 미포함 → Google 검색
+        if t.contains(" ") || !t.contains(".") {
+            let query = t.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? t
+            return "https://www.google.com/search?q=\(query)"
+        }
         return "https://\(t)"
     }
 
@@ -138,6 +151,8 @@ struct SimpleWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
             DispatchQueue.main.async {
                 self.parent.canGoBack = webView.canGoBack
+                self.parent.canGoForward = webView.canGoForward
+                self.parent.isLoading = false
                 self.parent.currentURL = webView.url?.absoluteString ?? self.parent.currentURL
             }
         }
@@ -145,6 +160,20 @@ struct SimpleWebView: UIViewRepresentable {
         func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
             DispatchQueue.main.async {
                 self.parent.canGoBack = webView.canGoBack
+                self.parent.canGoForward = webView.canGoForward
+                self.parent.isLoading = true
+            }
+        }
+
+        func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+            DispatchQueue.main.async {
+                self.parent.isLoading = false
+            }
+        }
+
+        func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+            DispatchQueue.main.async {
+                self.parent.isLoading = false
             }
         }
 

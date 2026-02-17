@@ -16,6 +16,9 @@ final class FaceTracker: NSObject, ObservableObject, ARSessionDelegate {
     // ✅ Gaze tap enable/disable
     @Published var isGazeTapEnabled: Bool = true
 
+    // ====== ARKit 지원 여부 ======
+    @Published var isSupported: Bool = true
+
     // ====== Gaze tracking (커서/탭) ======
     @Published var gazeValid: Bool = false
     @Published var gazePoint: CGPoint = .zero
@@ -58,7 +61,9 @@ final class FaceTracker: NSObject, ObservableObject, ARSessionDelegate {
     }
 
     func start() {
-        guard ARFaceTrackingConfiguration.isSupported else { return }
+        let supported = ARFaceTrackingConfiguration.isSupported
+        DispatchQueue.main.async { self.isSupported = supported }
+        guard supported else { return }
         session.delegate = self
         let config = ARFaceTrackingConfiguration()
         config.isLightEstimationEnabled = true
