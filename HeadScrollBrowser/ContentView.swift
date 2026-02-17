@@ -10,18 +10,16 @@ struct ContentView: View {
     @State private var isLoading: Bool = false
     @State private var command: WebCommand? = nil
 
-    // ✅ 컨트롤(정면설정/고개스크롤/민감도) 줄 숨김 상태
     @State private var controlsCollapsed: Bool = false
 
     var body: some View {
         GeometryReader { geo in
             VStack(spacing: 0) {
 
-                // ✅ 검은 베젤(상단 상태바 영역)
                 Color.black
                     .frame(height: geo.safeAreaInsets.top)
 
-                // ✅ (항상 보임) URL 입력 줄
+                // URL 입력 줄
                 HStack(spacing: 8) {
                     TextField("URL 입력", text: $addressBar)
                         .textInputAutocapitalization(.never)
@@ -29,7 +27,6 @@ struct ContentView: View {
                         .textFieldStyle(.roundedBorder)
                         .onSubmit { command = .load(addressBar) }
 
-                    // ✅ X 버튼: 입력한 주소 싹 지우고 빈칸으로
                     Button {
                         addressBar = ""
                     } label: {
@@ -59,7 +56,7 @@ struct ContentView: View {
                         .progressViewStyle(.linear)
                 }
 
-                // ✅ (토글됨) 정면설정/고개스크롤/민감도 줄
+                // 정면설정/고개스크롤/민감도 줄
                 if !controlsCollapsed {
                     VStack(spacing: 4) {
                         HStack(spacing: 8) {
@@ -70,6 +67,11 @@ struct ContentView: View {
 
                             Button(tracker.isScrollEnabled ? "고개스크롤 ON" : "고개스크롤 OFF") {
                                 tracker.setScrollEnabled(!tracker.isScrollEnabled)
+                            }
+                            .buttonStyle(.bordered)
+
+                            Button(tracker.isScrollInverted ? "상하반전 ON" : "상하반전 OFF") {
+                                tracker.isScrollInverted.toggle()
                             }
                             .buttonStyle(.bordered)
 
@@ -108,7 +110,7 @@ struct ContentView: View {
                     .opacity(0.5)
                 }
 
-                // ✅ 남는 공간은 전부 WebView가 먹음
+                // WebView
                 SimpleWebView(
                     initialURL: currentURL,
                     command: $command,
@@ -118,12 +120,34 @@ struct ContentView: View {
                     isLoading: $isLoading,
                     tracker: tracker
                 )
+                .overlay {
+                    GeometryReader { webGeo in
+                        if tracker.isAiming && tracker.hasFace {
+                            // 조준 모드: 왼쪽 눈 감은 상태, 고개로 위치 조절
+                            Circle()
+                                .fill(.cyan.opacity(0.8))
+                                .frame(width: 14, height: 14)
+                                .shadow(color: .cyan.opacity(0.6), radius: 4)
+                                .position(
+                                    x: webGeo.size.width * tracker.dotX,
+                                    y: webGeo.size.height * tracker.dotY
+                                )
+                                .animation(.easeOut(duration: 0.1), value: tracker.dotX)
+                                .animation(.easeOut(duration: 0.1), value: tracker.dotY)
+                        }
+                    }
+                }
                 .onChange(of: currentURL) { _, newValue in
-                // 필요하면 async로 감싸도 됨
                     addressBar = newValue
                 }
+                .onChange(of: tracker.eyeTapFired) { _, fired in
+                    if fired {
+                        command = .tapAt(tracker.dotX, tracker.dotY)
+                        tracker.eyeTapFired = false
+                    }
+                }
 
-                // ✅ 하단바: 뒤로 + UI 최소화 + 시선탭
+                // 하단바
                 HStack {
                     Button("뒤로") { command = .goBack }
                         .disabled(!canGoBack)
@@ -133,7 +157,6 @@ struct ContentView: View {
                         .disabled(!canGoForward)
                         .buttonStyle(.bordered)
 
-                    // ✅ 요청: 뒤로 옆에 UI 최소화 버튼
                     Button(controlsCollapsed ? "UI 펼치기" : "UI 최소화") {
                         controlsCollapsed.toggle()
                     }
@@ -164,6 +187,44 @@ struct ContentView: View {
                     .padding(24)
                     .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
                     .padding(32)
+                }
+            }
+            .overlay {
+                if tracker.eyesClosedProgress > 0 || tracker.calibrationProgress > 0 {
+                    VStack(spacing: 10) {
+                        // 정면 설정 프로그레스 (위)
+                        if tracker.calibrationProgress > 0 {
+                            VStack(spacing: 8) {
+                                ProgressView(value: tracker.calibrationProgress)
+                                    .progressViewStyle(.linear)
+                                    .tint(.green)
+                                    .frame(width: 160)
+                                Text("정면 설정 중…")
+                                    .font(.caption)
+                                    .foregroundStyle(.white)
+                            }
+                            .padding(12)
+                            .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 12))
+                        }
+
+                        // 탭 모드 프로그레스 (아래)
+                        if tracker.eyesClosedProgress > 0 {
+                            VStack(spacing: 8) {
+                                ProgressView(value: tracker.eyesClosedProgress)
+                                    .progressViewStyle(.linear)
+                                    .tint(tracker.isAiming ? .orange : .cyan)
+                                    .frame(width: 160)
+                                Text(tracker.eyeStatusText)
+                                    .font(.caption)
+                                    .foregroundStyle(.white)
+                            }
+                            .padding(12)
+                            .background(.black.opacity(0.7), in: RoundedRectangle(cornerRadius: 12))
+                        }
+                    }
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.2), value: tracker.eyesClosedProgress)
+                    .animation(.easeInOut(duration: 0.2), value: tracker.calibrationProgress)
                 }
             }
             .onAppear { tracker.start() }
