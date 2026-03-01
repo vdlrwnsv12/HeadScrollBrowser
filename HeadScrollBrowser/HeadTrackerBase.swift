@@ -31,6 +31,8 @@ class HeadTrackerBase: NSObject, ObservableObject {
     @Published var isAiming: Bool = false
     @Published var isDotFrozen: Bool = false
     @Published var eyeTapFired: Bool = false
+    @Published var tapDotX: CGFloat = 0.5   // 탭 발사 시점 스냅샷
+    @Published var tapDotY: CGFloat = 0.5
 
     // ====== 설정 모드 (입 벌리기) ======
     @Published var isSettingsMode: Bool = false
@@ -54,7 +56,7 @@ class HeadTrackerBase: NSObject, ObservableObject {
     let alpha: CGFloat = 0.2
 
     // ====== Eye close state ======
-    let eyeCloseThreshold: CGFloat = 0.65
+    let eyeCloseThreshold: CGFloat = 0.55
     var eyesClosedSince: CFTimeInterval?
 
     // ====== 고개 좌우 꺾기 → 뒤로/앞으로 ======
@@ -206,6 +208,8 @@ class HeadTrackerBase: NSObject, ObservableObject {
                 if isAiming {
                     if elapsed >= tapConfirmDuration && elapsed < calibrateDuration {
                         DispatchQueue.main.async {
+                            self.tapDotX = self.dotX
+                            self.tapDotY = self.dotY
                             self.eyeTapFired = true
                             self.isAiming = false
                         }
@@ -236,7 +240,7 @@ class HeadTrackerBase: NSObject, ObservableObject {
 
         let v = mapPitchToVelocity(pitch: adjustedPitch)
 
-        let yawRange: CGFloat = 15
+        let yawRange: CGFloat = 17
         let pitchRange: CGFloat = 15
 
         if isSettingsMode {
