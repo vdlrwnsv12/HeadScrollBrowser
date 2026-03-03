@@ -13,6 +13,13 @@ struct ContentView: View {
     @State private var controlsCollapsed: Bool = false
     @State private var webViewFrame: CGRect = .zero
     @State private var urlBarFrame: CGRect = .zero
+    @State private var gearBtnFrame: CGRect = .zero
+    @State private var calBtnFrame: CGRect = .zero
+    @State private var scrollBtnFrame: CGRect = .zero
+    @State private var invertBtnFrame: CGRect = .zero
+    @State private var backBtnFrame: CGRect = .zero
+    @State private var fwdBtnFrame: CGRect = .zero
+    @State private var collapseBtnFrame: CGRect = .zero
     @FocusState private var urlBarFocused: Bool
 
     var body: some View {
@@ -20,10 +27,15 @@ struct ContentView: View {
             let root = geo.frame(in: .global)
             let dotGY = root.minY + tracker.dotY * geo.size.height
             let aimActive = tracker.isAiming && tracker.hasFace && !webViewFrame.isEmpty
-            let isAimAbove = aimActive && dotGY >= urlBarFrame.maxY && dotGY < webViewFrame.minY
-            let isAimBelow = aimActive && dotGY > webViewFrame.maxY
-            let cZone: Int = tracker.dotX < 0.33 ? 0 : (tracker.dotX < 0.66 ? 1 : 2)
-            let bZone: Int = tracker.dotX < 0.25 ? 0 : (tracker.dotX < 0.5 ? 1 : 2)
+            let dotGX = root.minX + tracker.dotX * geo.size.width
+            let dot = CGPoint(x: dotGX, y: dotGY)
+            let isAimOnGear = aimActive && gearBtnFrame.contains(dot)
+            let isAimOnCal = aimActive && calBtnFrame.contains(dot)
+            let isAimOnScroll = aimActive && scrollBtnFrame.contains(dot)
+            let isAimOnInvert = aimActive && invertBtnFrame.contains(dot)
+            let isAimOnBack = aimActive && backBtnFrame.contains(dot)
+            let isAimOnFwd = aimActive && fwdBtnFrame.contains(dot)
+            let isAimOnCollapse = aimActive && collapseBtnFrame.contains(dot)
             VStack(spacing: 0) {
 
                 Color.black
@@ -80,48 +92,42 @@ struct ContentView: View {
                                 tracker.calibrateNeutral()
                             }
                             .buttonStyle(.bordered)
-                            .overlay { if isAimAbove && cZone == 0 { aimHighlight } }
+                            .overlay { if isAimOnCal { aimHighlight } }
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { calBtnFrame = $0 }
 
                             Button(tracker.isScrollEnabled ? "고개스크롤 ON" : "고개스크롤 OFF") {
                                 tracker.setScrollEnabled(!tracker.isScrollEnabled)
                             }
                             .buttonStyle(.bordered)
-                            .overlay { if isAimAbove && cZone == 1 { aimHighlight } }
+                            .overlay { if isAimOnScroll { aimHighlight } }
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { scrollBtnFrame = $0 }
 
                             Button(tracker.isScrollInverted ? "상하반전 ON" : "상하반전 OFF") {
                                 tracker.isScrollInverted.toggle()
                             }
                             .buttonStyle(.bordered)
-                            .overlay { if isAimAbove && cZone == 2 { aimHighlight } }
+                            .overlay { if isAimOnInvert { aimHighlight } }
+                            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { invertBtnFrame = $0 }
 
                             Spacer()
+
+                            Button {
+                                tracker.isSettingsMode.toggle()
+                            } label: {
+                                Image(systemName: "gearshape.fill")
+                                    .font(.title3)
+                                    .frame(width: 36, height: 36)
+                                    .background(.ultraThinMaterial, in: Circle())
+                            }
+                            .buttonStyle(.plain)
+                            .overlay { if isAimOnGear { aimHighlight } }
+                            .onGeometryChange(for: CGRect.self) { proxy in
+                                proxy.frame(in: .global)
+                            } action: { newFrame in
+                                gearBtnFrame = newFrame
+                            }
                         }
 
-                        HStack(spacing: 8) {
-                            Text("데드존")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            Slider(value: $tracker.deadZoneDeg, in: 1...10, step: 0.5)
-
-                            Text("\(tracker.deadZoneDeg, specifier: "%.1f")")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 30, alignment: .trailing)
-                        }
-
-                        HStack(spacing: 8) {
-                            Text("최대속도")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-
-                            Slider(value: $tracker.maxSpeedPtPerSec, in: 200...3000, step: 100)
-
-                            Text("\(Int(tracker.maxSpeedPtPerSec))")
-                                .font(.caption)
-                                .foregroundStyle(.secondary)
-                                .frame(width: 40, alignment: .trailing)
-                        }
                     }
                     .padding(.horizontal, 10)
                     .padding(.vertical, 8)
@@ -144,6 +150,22 @@ struct ContentView: View {
                 } action: { newFrame in
                     webViewFrame = newFrame
                 }
+                .overlay(alignment: .topLeading) {
+                    Button {
+                        controlsCollapsed.toggle()
+                    } label: {
+                        Image(systemName: controlsCollapsed ? "chevron.down.circle.fill" : "chevron.up.circle.fill")
+                            .font(.title2)
+                            .padding(8)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(.white)
+                    .background(.black.opacity(0.3), in: RoundedRectangle(cornerRadius: 10))
+                    .opacity(controlsCollapsed ? 0.4 : 1.0)
+                    .overlay { if isAimOnCollapse { aimHighlight } }
+                    .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { collapseBtnFrame = $0 }
+                    .padding(8)
+                }
                 .onChange(of: currentURL) { _, newValue in
                     addressBar = newValue
                     UserDefaults.standard.set(newValue, forKey: "lastURL")
@@ -161,6 +183,11 @@ struct ContentView: View {
                         guard !webViewFrame.isEmpty else { return }
 
                         // 1) WebView 탭
+                        if collapseBtnFrame.contains(pt) {
+                            controlsCollapsed.toggle()
+                            return
+                        }
+
                         if webViewFrame.contains(pt) {
                             let relX = (pt.x - webViewFrame.minX) / webViewFrame.width
                             let relY = (pt.y - webViewFrame.minY) / webViewFrame.height
@@ -174,7 +201,9 @@ struct ContentView: View {
 
                         // 2) WebView 위 영역: 컨트롤 스트립 (URL바 제외)
                         if pt.y >= urlBarFrame.maxY && pt.y < webViewFrame.minY {
-                            if !controlsCollapsed {
+                            if gearBtnFrame.contains(pt) {
+                                tracker.isSettingsMode.toggle()
+                            } else if !controlsCollapsed {
                                 // 화면 3등분으로 버튼 3개 판단
                                 if pt.x < root.minX + geo.size.width * 0.33 {
                                     tracker.calibrateNeutral()
@@ -220,18 +249,14 @@ struct ContentView: View {
                     Button("뒤로") { command = .goBack }
                         .disabled(!canGoBack)
                         .buttonStyle(.bordered)
-                        .overlay { if isAimBelow && bZone == 0 { aimHighlight } }
+                        .overlay { if isAimOnBack { aimHighlight } }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { backBtnFrame = $0 }
 
                     Button("앞으로") { command = .goForward }
                         .disabled(!canGoForward)
                         .buttonStyle(.bordered)
-                        .overlay { if isAimBelow && bZone == 1 { aimHighlight } }
-
-                    Button(controlsCollapsed ? "UI 펼치기" : "UI 최소화") {
-                        controlsCollapsed.toggle()
-                    }
-                    .buttonStyle(.bordered)
-                    .overlay { if isAimBelow && bZone == 2 { aimHighlight } }
+                        .overlay { if isAimOnFwd { aimHighlight } }
+                        .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { fwdBtnFrame = $0 }
 
                     Spacer()
                 }
@@ -242,6 +267,17 @@ struct ContentView: View {
             }
             .ignoresSafeArea(edges: .top)
             .statusBarHidden(true)
+
+            // 속도 디버그 오버레이
+            .overlay(alignment: .topTrailing) {
+                Text("v: \(Int(tracker.velocity))")
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.white)
+                    .padding(6)
+                    .background(.black.opacity(0.5), in: RoundedRectangle(cornerRadius: 6))
+                    .padding(.top, 8)
+                    .padding(.trailing, 8)
+            }
 
             // 네비게이션 진행도 오버레이
             .overlay {
@@ -326,6 +362,34 @@ struct ContentView: View {
                                     .fill(tracker.selectedSetting == 1 ? .orange.opacity(0.5) : .white.opacity(0.15))
                             )
                         }
+
+                        VStack(spacing: 12) {
+                            HStack {
+                                Text("데드존")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.8))
+                                    .frame(width: 50, alignment: .leading)
+                                Slider(value: $tracker.deadZoneDeg, in: 1...10, step: 0.5)
+                                    .tint(.cyan)
+                                Text("\(tracker.deadZoneDeg, specifier: "%.1f")")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.white.opacity(0.8))
+                                    .frame(width: 30, alignment: .trailing)
+                            }
+                            HStack {
+                                Text("최대속도")
+                                    .font(.caption)
+                                    .foregroundStyle(.white.opacity(0.8))
+                                    .frame(width: 50, alignment: .leading)
+                                Slider(value: $tracker.maxSpeedPtPerSec, in: 200...3000, step: 100)
+                                    .tint(.orange)
+                                Text("\(Int(tracker.maxSpeedPtPerSec))")
+                                    .font(.caption.monospacedDigit())
+                                    .foregroundStyle(.white.opacity(0.8))
+                                    .frame(width: 35, alignment: .trailing)
+                            }
+                        }
+                        .frame(width: 280)
                     }
                     .padding(24)
                     .background(.black.opacity(0.8), in: RoundedRectangle(cornerRadius: 20))
@@ -357,7 +421,7 @@ struct ContentView: View {
 
             // 눈 감기/정면설정 프로그레스
             .overlay {
-                if tracker.eyesClosedProgress > 0 || tracker.calibrationProgress > 0 {
+                if (tracker.eyesClosedProgress > 0 || tracker.calibrationProgress > 0) && tracker.velocity == 0 {
                     VStack(spacing: 10) {
                         if tracker.calibrationProgress > 0 {
                             VStack(spacing: 8) {

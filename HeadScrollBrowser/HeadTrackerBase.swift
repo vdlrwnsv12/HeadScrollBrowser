@@ -159,8 +159,16 @@ class HeadTrackerBase: NSObject, ObservableObject {
 
     // ====== 통합 눈 감기 처리 ======
     func processAiming(leftClosed: Bool, rightClosed: Bool) {
-        // 설정 모드 중에는 눈 감기 무시
-        if isSettingsMode { return }
+        // 설정 모드 또는 스크롤 중에는 눈 감기 무시
+        if isSettingsMode || abs(velocity) > 300 {
+            eyesClosedSince = nil
+            DispatchQueue.main.async {
+                self.eyesClosedProgress = 0
+                self.eyeStatusText = ""
+                self.calibrationProgress = 0
+            }
+            return
+        }
 
         let bothClosed = leftClosed && rightClosed
         let now = CACurrentMediaTime()
@@ -216,7 +224,7 @@ class HeadTrackerBase: NSObject, ObservableObject {
                     }
                     DispatchQueue.main.async { self.isDotFrozen = false }
                 } else {
-                    if elapsed >= aimEntryDuration && elapsed < calibrateDuration {
+                    if elapsed >= aimEntryDuration && elapsed < calibrateDuration && velocity == 0 {
                         DispatchQueue.main.async { self.isAiming = true }
                     }
                 }
@@ -241,7 +249,7 @@ class HeadTrackerBase: NSObject, ObservableObject {
         let v = mapPitchToVelocity(pitch: adjustedPitch)
 
         let yawRange: CGFloat = 17
-        let pitchRange: CGFloat = 15
+        let pitchRange: CGFloat = 9
 
         if isSettingsMode {
             // 설정 모드: 고개 상하로 값 조절, 좌우로 항목 선택
