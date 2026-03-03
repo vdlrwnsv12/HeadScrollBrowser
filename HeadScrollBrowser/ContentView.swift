@@ -10,7 +10,7 @@ struct ContentView: View {
     @State private var isLoading: Bool = false
     @State private var command: WebCommand? = nil
 
-    @State private var controlsCollapsed: Bool = false
+    @State private var controlsCollapsed: Bool = UserDefaults.standard.bool(forKey: "controlsCollapsed")
     @State private var webViewFrame: CGRect = .zero
     @State private var urlBarFrame: CGRect = .zero
     @State private var gearBtnFrame: CGRect = .zero
@@ -89,7 +89,7 @@ struct ContentView: View {
                     VStack(spacing: 4) {
                         HStack(spacing: 8) {
                             Button("정면 설정") {
-                                tracker.calibrateNeutral()
+                                tracker.isCalibrationMode = true
                             }
                             .buttonStyle(.bordered)
                             .overlay { if isAimOnCal { aimHighlight } }
@@ -170,6 +170,9 @@ struct ContentView: View {
                     addressBar = newValue
                     UserDefaults.standard.set(newValue, forKey: "lastURL")
                 }
+                .onChange(of: controlsCollapsed) { _, newValue in
+                    UserDefaults.standard.set(newValue, forKey: "controlsCollapsed")
+                }
                 .onChange(of: tracker.eyeTapFired) { _, fired in
                     if fired {
                         // 좌표계를 global로 통일 (webViewFrame도 global)
@@ -206,7 +209,7 @@ struct ContentView: View {
                             } else if !controlsCollapsed {
                                 // 화면 3등분으로 버튼 3개 판단
                                 if pt.x < root.minX + geo.size.width * 0.33 {
-                                    tracker.calibrateNeutral()
+                                    tracker.isCalibrationMode = true
                                 } else if pt.x < root.minX + geo.size.width * 0.66 {
                                     tracker.setScrollEnabled(!tracker.isScrollEnabled)
                                 } else {
@@ -281,7 +284,7 @@ struct ContentView: View {
 
             // 네비게이션 진행도 오버레이
             .overlay {
-                if tracker.navProgress > 0 {
+                if tracker.navProgress > 0 && !tracker.isCalibrationMode {
                     HStack {
                         if tracker.navDirection == -1 {
                             HStack(spacing: 8) {
@@ -318,6 +321,62 @@ struct ContentView: View {
                     .padding(.horizontal, 16)
                     .transition(.opacity)
                     .animation(.easeInOut(duration: 0.15), value: tracker.navProgress)
+                }
+            }
+
+            // 정면 설정 모드 오버레이
+            .overlay {
+                if tracker.isCalibrationMode {
+                    VStack(spacing: 20) {
+                        Text("현재 얼굴 각도를 정면으로 설정하려면\n눈을 3초만 작게 떠 주세요.")
+                            .font(.subheadline)
+                            .foregroundStyle(.white)
+                            .multilineTextAlignment(.center)
+
+                        ZStack {
+                            // 십자선
+                            Rectangle()
+                                .fill(.white.opacity(0.35))
+                                .frame(width: 180, height: 1)
+                            Rectangle()
+                                .fill(.white.opacity(0.35))
+                                .frame(width: 1, height: 180)
+                            // 현재 각도 점
+                            Circle()
+                                .fill(.cyan)
+                                .frame(width: 14, height: 14)
+                                .shadow(color: .cyan.opacity(0.7), radius: 4)
+                                .offset(
+                                    x: min(max(tracker.yawDeg / 17 * 90, -82), 82),
+                                    y: min(max(tracker.pitchDeg / 9 * 90, -82), 82)
+                                )
+                                .animation(.easeOut(duration: 0.08), value: tracker.yawDeg)
+                                .animation(.easeOut(duration: 0.08), value: tracker.pitchDeg)
+                        }
+                        .frame(width: 180, height: 180)
+                        .background(.white.opacity(0.06), in: RoundedRectangle(cornerRadius: 10))
+                        .clipShape(RoundedRectangle(cornerRadius: 10))
+
+                        if tracker.calibrationProgress > 0 {
+                            VStack(spacing: 6) {
+                                ProgressView(value: tracker.calibrationProgress)
+                                    .progressViewStyle(.linear)
+                                    .tint(.green)
+                                    .frame(width: 180)
+                                Text("정면 설정 중…")
+                                    .font(.caption)
+                                    .foregroundStyle(.white)
+                            }
+                        }
+
+                        Button("취소") { tracker.isCalibrationMode = false }
+                            .buttonStyle(.bordered)
+                            .tint(.white)
+                    }
+                    .padding(28)
+                    .background(.black.opacity(0.85), in: RoundedRectangle(cornerRadius: 20))
+                    .transition(.opacity)
+                    .animation(.easeInOut(duration: 0.2), value: tracker.isCalibrationMode)
                 }
             }
 
@@ -421,7 +480,7 @@ struct ContentView: View {
 
             // 눈 감기/정면설정 프로그레스
             .overlay {
-                if (tracker.eyesClosedProgress > 0 || tracker.calibrationProgress > 0) && tracker.velocity == 0 {
+                if (tracker.eyesClosedProgress > 0 || tracker.calibrationProgress > 0) && tracker.velocity == 0 && !tracker.isCalibrationMode {
                     VStack(spacing: 10) {
                         if tracker.calibrationProgress > 0 {
                             VStack(spacing: 8) {
@@ -459,7 +518,7 @@ struct ContentView: View {
 
             // 조준 모드 점
             .overlay {
-                if tracker.isAiming && tracker.hasFace {
+                if tracker.isAiming && tracker.hasFace && !tracker.isCalibrationMode {
                     Circle()
                         .fill(.cyan.opacity(0.8))
                         .frame(width: 14, height: 14)

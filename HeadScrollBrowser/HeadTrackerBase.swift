@@ -34,6 +34,9 @@ class HeadTrackerBase: NSObject, ObservableObject {
     @Published var tapDotX: CGFloat = 0.5   // 탭 발사 시점 스냅샷
     @Published var tapDotY: CGFloat = 0.5
 
+    // ====== 정면 설정 모드 ======
+    @Published var isCalibrationMode: Bool = false
+
     // ====== 설정 모드 (입 벌리기) ======
     @Published var isSettingsMode: Bool = false
     @Published var selectedSetting: Int = 0          // 0 = 데드존, 1 = 최대속도
@@ -173,6 +176,28 @@ class HeadTrackerBase: NSObject, ObservableObject {
         let bothClosed = leftClosed && rightClosed
         let now = CACurrentMediaTime()
 
+        // 정면 설정 모드: 눈 감기 → 3초 후 calibrate
+        if isCalibrationMode {
+            if bothClosed {
+                if eyesClosedSince == nil { eyesClosedSince = now }
+                let elapsed = now - (eyesClosedSince ?? now)
+                let progress = min(elapsed / calibrateDuration, 1.0)
+                DispatchQueue.main.async { self.calibrationProgress = progress }
+                if elapsed >= calibrateDuration {
+                    calibrateNeutral()
+                    eyesClosedSince = nil
+                    DispatchQueue.main.async {
+                        self.isCalibrationMode = false
+                        self.calibrationProgress = 0
+                    }
+                }
+            } else {
+                eyesClosedSince = nil
+                DispatchQueue.main.async { self.calibrationProgress = 0 }
+            }
+            return
+        }
+
         if bothClosed {
             if eyesClosedSince == nil { eyesClosedSince = now }
             let elapsed = now - (eyesClosedSince ?? now)
@@ -181,7 +206,6 @@ class HeadTrackerBase: NSObject, ObservableObject {
             DispatchQueue.main.async { self.calibrationProgress = calProgress }
 
             if elapsed >= calibrateDuration {
-                calibrateNeutral()
                 eyesClosedSince = nil
                 DispatchQueue.main.async {
                     self.isAiming = false
@@ -189,6 +213,7 @@ class HeadTrackerBase: NSObject, ObservableObject {
                     self.eyesClosedProgress = 0
                     self.eyeStatusText = ""
                     self.calibrationProgress = 0
+                    self.isCalibrationMode = true
                 }
                 return
             }
@@ -303,7 +328,7 @@ class HeadTrackerBase: NSObject, ObservableObject {
                 self.yawDeg = adjustedYaw
                 self.dotX = self.smoothedDotX
                 self.dotY = self.smoothedDotY
-                self.velocity = (self.hasFace && self.isScrollEnabled && self.eyesClosedProgress == 0) ? v : 0
+                self.velocity = (self.hasFace && self.isScrollEnabled && self.eyesClosedProgress == 0 && !self.isCalibrationMode) ? v : 0
             }
         } else {
             // isDotFrozen: 점 고정, velocity 0
@@ -316,7 +341,7 @@ class HeadTrackerBase: NSObject, ObservableObject {
 
         // ====== 고개 좌우 꺾기 → 뒤로/앞으로 감지 ======
         // 설정 모드·조준 모드에서는 비활성
-        guard !isSettingsMode && !isAiming else {
+        guard !isSettingsMode && !isAiming && !isCalibrationMode else {
             yawHoldSince = nil
             yawHoldDirection = 0
             DispatchQueue.main.async { self.navProgress = 0; self.navDirection = 0 }
